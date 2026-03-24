@@ -9,8 +9,8 @@
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0a0a0a;
-      color: #e5e5e5;
+      background: #f5f5f5;
+      color: #1a1a1a;
       min-height: 100vh;
     }
 
@@ -28,23 +28,24 @@
     header h1 {
       font-size: 2.2rem;
       font-weight: 700;
-      color: #fff;
+      color: #1a1a1a;
       margin-bottom: 0.5rem;
     }
 
-    header h1 span { color: #22c55e; }
+    header h1 span { color: #16a34a; }
 
     header p {
-      color: #888;
+      color: #666;
       font-size: 1rem;
     }
 
     .search-form {
-      background: #141414;
-      border: 1px solid #262626;
+      background: #fff;
+      border: 1px solid #e0e0e0;
       border-radius: 12px;
       padding: 1.5rem;
       margin-bottom: 2rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     }
 
     .form-grid {
@@ -57,7 +58,7 @@
     .field label {
       display: block;
       font-size: 0.8rem;
-      color: #888;
+      color: #666;
       margin-bottom: 0.35rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -66,26 +67,26 @@
     .field input, .field select {
       width: 100%;
       padding: 0.6rem 0.75rem;
-      background: #1a1a1a;
-      border: 1px solid #333;
+      background: #fafafa;
+      border: 1px solid #d0d0d0;
       border-radius: 8px;
-      color: #fff;
+      color: #1a1a1a;
       font-size: 0.95rem;
       outline: none;
       transition: border-color 0.2s;
     }
 
     .field input:focus, .field select:focus {
-      border-color: #22c55e;
+      border-color: #16a34a;
     }
 
-    .field input::placeholder { color: #555; }
+    .field input::placeholder { color: #999; }
 
     .btn-search {
       width: 100%;
       padding: 0.75rem;
-      background: #22c55e;
-      color: #000;
+      background: #16a34a;
+      color: #fff;
       font-size: 1rem;
       font-weight: 600;
       border: none;
@@ -94,17 +95,17 @@
       transition: background 0.2s;
     }
 
-    .btn-search:hover { background: #16a34a; }
+    .btn-search:hover { background: #15803d; }
     .btn-search:disabled {
-      background: #333;
-      color: #666;
+      background: #e0e0e0;
+      color: #999;
       cursor: not-allowed;
     }
 
     .status {
       text-align: center;
       padding: 2rem;
-      color: #888;
+      color: #666;
       display: none;
     }
 
@@ -114,8 +115,8 @@
       display: inline-block;
       width: 24px;
       height: 24px;
-      border: 3px solid #333;
-      border-top-color: #22c55e;
+      border: 3px solid #e0e0e0;
+      border-top-color: #16a34a;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
       margin-bottom: 0.75rem;
@@ -128,8 +129,8 @@
     .results.active { display: block; }
 
     .summary-card {
-      background: linear-gradient(135deg, #052e16, #14532d);
-      border: 1px solid #166534;
+      background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+      border: 1px solid #a7f3d0;
       border-radius: 12px;
       padding: 1.5rem;
       margin-bottom: 2rem;
@@ -139,13 +140,13 @@
     .recommended-price {
       font-size: 2.5rem;
       font-weight: 700;
-      color: #22c55e;
+      color: #15803d;
       margin: 0.5rem 0;
     }
 
     .summary-label {
       font-size: 0.85rem;
-      color: #86efac;
+      color: #166534;
       text-transform: uppercase;
       letter-spacing: 0.1em;
     }
@@ -165,12 +166,12 @@
     .stat-value {
       font-size: 1.2rem;
       font-weight: 600;
-      color: #fff;
+      color: #1a1a1a;
     }
 
     .stat-label {
       font-size: 0.75rem;
-      color: #86efac;
+      color: #166534;
     }
 
     .listings-header {
@@ -182,7 +183,7 @@
 
     .listings-header h2 {
       font-size: 1.1rem;
-      color: #fff;
+      color: #1a1a1a;
     }
 
     .source-tags {
@@ -195,13 +196,13 @@
       font-size: 0.7rem;
       padding: 0.2rem 0.5rem;
       border-radius: 4px;
-      background: #1a1a1a;
-      border: 1px solid #333;
-      color: #888;
+      background: #f0f0f0;
+      border: 1px solid #d0d0d0;
+      color: #666;
     }
 
-    .source-tag.ok { border-color: #166534; color: #22c55e; }
-    .source-tag.fail { border-color: #7f1d1d; color: #ef4444; }
+    .source-tag.ok { border-color: #a7f3d0; color: #15803d; background: #ecfdf5; }
+    .source-tag.fail { border-color: #fecaca; color: #dc2626; background: #fef2f2; }
 
     .listing-table {
       width: 100%;
@@ -212,8 +213,8 @@
     .listing-table th {
       text-align: left;
       padding: 0.6rem 0.75rem;
-      border-bottom: 1px solid #333;
-      color: #888;
+      border-bottom: 2px solid #e0e0e0;
+      color: #666;
       font-weight: 500;
       font-size: 0.75rem;
       text-transform: uppercase;
@@ -224,12 +225,12 @@
 
     .listing-table td {
       padding: 0.6rem 0.75rem;
-      border-bottom: 1px solid #1a1a1a;
-      color: #ccc;
+      border-bottom: 1px solid #ebebeb;
+      color: #333;
     }
 
     .listing-table td.price {
-      color: #22c55e;
+      color: #15803d;
       font-weight: 600;
       text-align: right;
       font-variant-numeric: tabular-nums;
@@ -241,13 +242,13 @@
     }
 
     .listing-table td a {
-      color: #60a5fa;
+      color: #2563eb;
       text-decoration: none;
     }
 
     .listing-table td a:hover { text-decoration: underline; }
 
-    .listing-table tr:hover { background: #141414; }
+    .listing-table tr:hover { background: #f9f9f9; }
 
     .error-msg {
       text-align: center;
