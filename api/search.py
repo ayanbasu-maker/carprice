@@ -32,19 +32,26 @@ USER_AGENTS = [
 ]
 
 
-def _headers():
+def _headers(referer: str = "https://www.google.com/"):
     return {
         "User-Agent": random.choice(USER_AGENTS),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
+        "Referer": referer,
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+        "Cache-Control": "max-age=0",
     }
 
 
-def _get(url: str, session: requests.Session, timeout: int = 20) -> requests.Response:
-    session.headers.update(_headers())
-    resp = session.get(url, timeout=timeout)
+def _get(url: str, session: requests.Session, timeout: int = 20, referer: str = "https://www.google.com/") -> requests.Response:
+    session.headers.update(_headers(referer))
+    resp = session.get(url, timeout=timeout, allow_redirects=True)
     resp.raise_for_status()
     return resp
 
@@ -190,10 +197,12 @@ def scrape_craigslist(year: int, make: str, model: str, trim: str, mileage: int,
 
 def scrape_cargurus(year: int, make: str, model: str, trim: str, mileage: int,
                     zip_code: str, radius: int) -> list[Listing]:
-    """Attempt CarGurus with requests (may get 403)."""
+    """Attempt CarGurus search results API."""
     session = requests.Session()
     listings = []
 
+    # Try the search results page
+    search_query = quote(f"{year} {make} {model}")
     url = (
         f"https://www.cargurus.com/Cars/inventorylisting/viewDetailsFilterViewInventoryListing.action"
         f"?zip={zip_code}&inventorySearchWidgetType=AUTO&searchChanged=true"
@@ -202,48 +211,63 @@ def scrape_cargurus(year: int, make: str, model: str, trim: str, mileage: int,
     )
 
     try:
-        resp = _get(url, session)
+        # First visit the homepage to get cookies
+        session.headers.update(_headers("https://www.google.com/"))
+        session.get("https://www.cargurus.com/", timeout=10)
+        time.sleep(0.5)
+
+        resp = _get(url, session, referer="https://www.cargurus.com/")
         html = resp.text
 
-        # Try embedded JSON
-        for pattern in [r'"listings"\s*:\s*(\[.*?\])\s*[,}]', r'"inventoryListings"\s*:\s*(\[.*?\])\s*[,}]']:
-            matches = re.findall(pattern, html, re.DOTALL)
+        # Try embedded JSON - multiple patterns
+        json_patterns = [
+            r'"listings"\s*:\s*(\[[\s\S]*?\])\s*,\s*"',
+            r'"inventoryListings"\s*:\s*(\[[\s\S]*?\])\s*,\s*"',
+            r'"results"\s*:\s*(\[[\s\S]*?\])\s*,\s*"',
+            r'initialState\s*=\s*\{.*?"listings"\s*:\s*(\[[\s\S]*?\])',
+        ]
+        for pattern in json_patterns:
+            if listings:
+                break
+            matches = re.findall(pattern, html)
             for match in matches:
                 try:
                     data = json.loads(match)
                     for item in data:
-                        price = item.get("price") or item.get("listPrice")
-                        if not price:
+                        price = item.get("price") or item.get("listPrice") or item.get("expectedPrice")
+                        if not price or int(price) < 500:
                             continue
                         listings.append(Listing(
                             source="cargurus",
-                            title=item.get("listingTitle", f"{year} {make} {model}"),
+                            title=item.get("listingTitle") or item.get("name") or f"{year} {make} {model}",
                             price=int(price),
                             mileage=int(item["mileage"]) if item.get("mileage") else None,
                             trim=item.get("trimName") or _extract_trim(item.get("listingTitle", ""), year, make, model),
-                            location=item.get("locationString"),
+                            location=item.get("locationString") or item.get("sellerCity"),
                             dealer_name=item.get("sellerName"),
                             is_dealer=True,
                             url=f"https://www.cargurus.com/Cars/inventorylisting/viewDetailsFilterViewInventoryListing.action?listingId={item.get('id', '')}",
                         ))
-                except (json.JSONDecodeError, TypeError):
+                except (json.JSONDecodeError, TypeError, ValueError):
                     continue
 
-        # Try HTML fallback
+        # HTML fallback
         if not listings:
             soup = BeautifulSoup(html, "lxml")
-            cards = soup.select("[data-cg-ft='car-blade']") or soup.select(".listing-row")
+            cards = soup.select("[data-cg-ft='car-blade']") or soup.select(".listing-row") or soup.select("article")
             for card in cards:
                 try:
-                    price_el = card.select_one("[data-cg-ft='car-blade-price']") or card.select_one(".price")
+                    price_el = card.select_one("[data-cg-ft='car-blade-price']") or card.select_one(".price") or card.select_one("[class*='price']")
                     if not price_el:
                         continue
                     pm = re.search(r'[\d,]+', price_el.get_text().replace("$", ""))
                     if not pm:
                         continue
                     price = int(pm.group().replace(",", ""))
+                    if price < 500:
+                        continue
 
-                    title_el = card.select_one("h4") or card.select_one("a")
+                    title_el = card.select_one("h4") or card.select_one("h2") or card.select_one("a")
                     title = title_el.get_text(strip=True) if title_el else f"{year} {make} {model}"
 
                     link_el = card.select_one("a[href]")
@@ -268,7 +292,7 @@ def scrape_cargurus(year: int, make: str, model: str, trim: str, mileage: int,
 
 def scrape_carscom(year: int, make: str, model: str, trim: str, mileage: int,
                    zip_code: str, radius: int) -> list[Listing]:
-    """Attempt Cars.com with requests (may get 403)."""
+    """Attempt Cars.com with requests."""
     session = requests.Session()
     listings = []
     mk = make.lower()
@@ -284,29 +308,37 @@ def scrape_carscom(year: int, make: str, model: str, trim: str, mileage: int,
         url += f"&trims[]={mk}-{md}-{trim.lower()}"
 
     try:
-        resp = _get(url, session)
+        # Visit homepage first for cookies
+        session.headers.update(_headers("https://www.google.com/"))
+        session.get("https://www.cars.com/", timeout=10)
+        time.sleep(0.3)
+
+        resp = _get(url, session, referer="https://www.cars.com/")
         soup = BeautifulSoup(resp.text, "lxml")
-        cards = soup.select(".vehicle-card") or soup.select("[class*='vehicle-card']")
+        cards = soup.select(".vehicle-card") or soup.select("[class*='vehicle-card']") or soup.select("[data-qa='results-card']")
 
         for card in cards:
             try:
-                title_el = card.select_one("a.vehicle-card-visited-tracking-link") or card.select_one("h2")
+                title_el = card.select_one("a.vehicle-card-visited-tracking-link") or card.select_one("h2") or card.select_one("[class*='title']")
                 if not title_el:
                     continue
                 title = title_el.get_text(strip=True)
 
-                price_el = card.select_one(".primary-price")
+                price_el = card.select_one(".primary-price") or card.select_one("[class*='primary-price']") or card.select_one("[class*='price']")
                 if not price_el:
                     continue
                 pm = re.search(r'[\d,]+', price_el.get_text().replace("$", ""))
                 if not pm:
                     continue
+                price = int(pm.group().replace(",", ""))
+                if price < 500:
+                    continue
 
-                link_el = card.select_one("a[href*='/vehicledetail/']")
+                link_el = card.select_one("a[href*='/vehicledetail/']") or card.select_one("a[href*='/vehicle/']")
                 href = link_el["href"] if link_el else ""
                 link = href if href.startswith("http") else f"https://www.cars.com{href}"
 
-                mileage_el = card.select_one(".mileage")
+                mileage_el = card.select_one(".mileage") or card.select_one("[class*='mileage']")
                 mi = None
                 if mileage_el:
                     mm = re.search(r'([\d,]+)', mileage_el.get_text())
@@ -315,7 +347,7 @@ def scrape_carscom(year: int, make: str, model: str, trim: str, mileage: int,
                 listings.append(Listing(
                     source="carscom",
                     title=title,
-                    price=int(pm.group().replace(",", "")),
+                    price=price,
                     mileage=mi,
                     trim=_extract_trim(title, year, make, model),
                     is_dealer=True,
@@ -325,6 +357,101 @@ def scrape_carscom(year: int, make: str, model: str, trim: str, mileage: int,
                 continue
     except Exception as e:
         logger.warning(f"Cars.com failed: {e}")
+
+    return listings
+
+
+def scrape_autotrader(year: int, make: str, model: str, trim: str, mileage: int,
+                      zip_code: str, radius: int) -> list[Listing]:
+    """Attempt AutoTrader with requests."""
+    session = requests.Session()
+    listings = []
+
+    mk = make.lower().replace(" ", "-")
+    md = model.lower().replace(" ", "-")
+
+    url = (
+        f"https://www.autotrader.com/cars-for-sale/all-cars/{year}/{make}/{model}"
+        f"?zip={zip_code}&searchRadius={radius}&isNewSearch=true&marketExtension=include"
+        f"&sortBy=relevance&numRecords=25"
+    )
+
+    try:
+        session.headers.update(_headers("https://www.google.com/"))
+        session.get("https://www.autotrader.com/", timeout=10)
+        time.sleep(0.3)
+
+        resp = _get(url, session, referer="https://www.autotrader.com/")
+        html = resp.text
+
+        # Extract JSON data from script tags
+        json_patterns = [
+            r'window\.__BONNET_DATA__\s*=\s*(\{[\s\S]*?\});\s*</script>',
+            r'"listings"\s*:\s*(\[[\s\S]*?\])\s*,',
+            r'"results"\s*:\s*(\[[\s\S]*?\])\s*,',
+        ]
+
+        for pattern in json_patterns:
+            if listings:
+                break
+            matches = re.findall(pattern, html)
+            for match in matches:
+                try:
+                    data = json.loads(match)
+                    items = data if isinstance(data, list) else data.get("listings", data.get("results", []))
+                    for item in items:
+                        price = item.get("pricingDetail", {}).get("primary") if isinstance(item.get("pricingDetail"), dict) else item.get("price") or item.get("listPrice")
+                        if not price or int(price) < 500:
+                            continue
+                        listings.append(Listing(
+                            source="autotrader",
+                            title=item.get("title") or f"{year} {make} {model}",
+                            price=int(price),
+                            mileage=int(item.get("mileage") or item.get("specifications", {}).get("mileage", {}).get("value", 0)) or None,
+                            trim=item.get("trim") or _extract_trim(item.get("title", ""), year, make, model),
+                            location=item.get("location"),
+                            dealer_name=item.get("owner", {}).get("name") if isinstance(item.get("owner"), dict) else None,
+                            is_dealer=True,
+                            url=f"https://www.autotrader.com/cars-for-sale/vehicledetails.xhtml?listingId={item.get('id', '')}",
+                        ))
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    continue
+
+        # HTML fallback
+        if not listings:
+            soup = BeautifulSoup(html, "lxml")
+            cards = soup.select("[data-cmp='inventoryListing']") or soup.select(".inventory-listing")
+            for card in cards:
+                try:
+                    price_el = card.select_one("[data-cmp='firstPrice']") or card.select_one("[class*='first-price']")
+                    if not price_el:
+                        continue
+                    pm = re.search(r'[\d,]+', price_el.get_text().replace("$", ""))
+                    if not pm:
+                        continue
+                    price = int(pm.group().replace(",", ""))
+                    if price < 500:
+                        continue
+
+                    title_el = card.select_one("h2") or card.select_one("[data-cmp='heading']")
+                    title = title_el.get_text(strip=True) if title_el else f"{year} {make} {model}"
+
+                    link_el = card.select_one("a[href*='vehicledetails']")
+                    href = link_el["href"] if link_el else ""
+                    link = href if href.startswith("http") else f"https://www.autotrader.com{href}"
+
+                    listings.append(Listing(
+                        source="autotrader",
+                        title=title,
+                        price=price,
+                        trim=_extract_trim(title, year, make, model),
+                        is_dealer=True,
+                        url=link,
+                    ))
+                except Exception:
+                    continue
+    except Exception as e:
+        logger.warning(f"AutoTrader failed: {e}")
 
     return listings
 
@@ -460,9 +587,11 @@ class handler(BaseHTTPRequestHandler):
             "craigslist": scrape_craigslist,
             "cargurus": scrape_cargurus,
             "carscom": scrape_carscom,
+            "autotrader": scrape_autotrader,
         }
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        error_details = {}
+        with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {
                 executor.submit(fn, year_int, make, model, trim_val, mileage_int, zip_code, radius): name
                 for name, fn in scrapers.items()
@@ -472,13 +601,18 @@ class handler(BaseHTTPRequestHandler):
                 try:
                     results = future.result(timeout=20)
                     all_listings.extend(results)
-                    sources_searched.append(name)
+                    sources_searched.append(f"{name} ({len(results)})")
                 except Exception as e:
                     sources_failed.append(name)
+                    error_details[name] = str(e)[:100]
 
         report = normalize_and_analyze(all_listings, mileage_int)
         report["sources_searched"] = sources_searched
         report["sources_failed"] = sources_failed
+        report["debug"] = {
+            "raw_count": len(all_listings),
+            "errors": error_details,
+        }
 
         self._json_response(200, report)
 
