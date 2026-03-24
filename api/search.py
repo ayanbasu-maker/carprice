@@ -51,9 +51,22 @@ def _headers(referer: str = "https://www.google.com/"):
     }
 
 
+import os
+SCRAPER_API_KEY = os.environ.get("SCRAPER_API_KEY", "")
+
+
+def _proxied_url(url: str) -> str:
+    """Route through ScraperAPI if key is set, otherwise direct."""
+    if SCRAPER_API_KEY:
+        from urllib.parse import urlencode
+        return f"http://api.scraperapi.com?{urlencode({'api_key': SCRAPER_API_KEY, 'url': url, 'render': 'false'})}"
+    return url
+
+
 def _get(url: str, session: requests.Session, timeout: int = 20, referer: str = "https://www.google.com/") -> requests.Response:
     session.headers.update(_headers(referer))
-    resp = session.get(url, timeout=timeout, allow_redirects=True)
+    fetch_url = _proxied_url(url)
+    resp = session.get(fetch_url, timeout=timeout, allow_redirects=True)
     resp.raise_for_status()
     return resp
 
@@ -117,10 +130,10 @@ def _extract_trim(title: str, year: int, make: str, model: str) -> Optional[str]
 
 def scrape_craigslist(year: int, make: str, model: str, trim: str, mileage: int,
                       zip_code: str, radius: int) -> list[Listing]:
-    """Scrape Craigslist via RSS feed (no JS needed)."""
+    """Scrape Craigslist (works via proxy)."""
     session = requests.Session()
     listings = []
-    cities = _get_cl_cities(zip_code, limit=5)
+    cities = _get_cl_cities(zip_code, limit=3)
 
     query = f"{make} {model}"
     if trim:
@@ -130,52 +143,58 @@ def scrape_craigslist(year: int, make: str, model: str, trim: str, mileage: int,
         try:
             url = (
                 f"https://{city}.craigslist.org/search/cta"
-                f"?format=rss"
-                f"&query={query.replace(' ', '+')}"
+                f"?query={query.replace(' ', '+')}"
                 f"&min_auto_year={year}&max_auto_year={year}"
-                f"&postal={zip_code}&search_distance={radius}"
+                f"&sort=date&postal={zip_code}&search_distance={radius}"
             )
-            session.headers.update({
-                "User-Agent": random.choice(USER_AGENTS),
-                "Accept": "application/rss+xml, application/xml, text/xml, */*",
-            })
-            resp = session.get(url, timeout=15, allow_redirects=True)
-            if resp.status_code != 200:
-                continue
+            resp = _get(url, session)
+            soup = BeautifulSoup(resp.text, "lxml")
 
-            root = ET.fromstring(resp.content)
-            ns = {"cl": "http://www.craigslist.org/about/cl-rss-3.0"}
+            results = (
+                soup.select("div.cl-search-result")
+                or soup.select("li.cl-static-search-result")
+                or soup.select(".result-row")
+            )
 
-            for item in root.findall(".//item"):
+            for result in results:
                 try:
-                    title = item.findtext("title", "").strip()
-                    link = item.findtext("link", "").strip()
+                    card_title = result.get("title", "")
+                    title_el = result.select_one("a.titlestring") or result.select_one(".gallery-card a.main")
+                    if title_el:
+                        if not card_title:
+                            card_title = title_el.get_text(strip=True)
+                        href = title_el.get("href", "")
+                    else:
+                        any_a = result.select_one("a[href*='craigslist']")
+                        href = any_a.get("href", "") if any_a else ""
 
-                    # Price from title or description
-                    desc = item.findtext("description", "") or ""
-                    price_text = title + " " + desc
-                    price_match = re.search(r'\$([\d,]+)', price_text)
+                    link = href if href.startswith("http") else f"https://{city}.craigslist.org{href}"
+
+                    price_el = result.select_one(".priceinfo") or result.select_one(".result-price")
+                    if not price_el:
+                        continue
+                    price_match = re.search(r'\$([\d,]+)', price_el.get_text(strip=True))
                     if not price_match:
                         continue
                     price = int(price_match.group(1).replace(",", ""))
                     if price < 500:
                         continue
 
-                    # Mileage from description or title
-                    mi_match = re.search(r'([\d,]+)\s*(?:miles?|mi\b)', desc.lower() + " " + title.lower())
+                    meta_el = result.select_one(".meta")
+                    meta_text = meta_el.get_text(strip=True) if meta_el else ""
+                    mi_match = re.search(r'([\d,]+)\s*(?:mi|k\s*mi)', meta_text.lower() + " " + card_title.lower())
                     mi = int(mi_match.group(1).replace(",", "")) if mi_match else None
 
-                    # Location
-                    enc = item.find("enclosure")
-                    location = item.findtext("{http://www.georss.org/georss}point", city)
+                    loc_el = result.select_one(".result-location")
+                    location = loc_el.get_text(strip=True).strip("+ ") if loc_el else city
 
                     listings.append(Listing(
                         source="craigslist",
-                        title=title,
+                        title=card_title,
                         price=price,
                         mileage=mi,
-                        trim=_extract_trim(title, year, make, model),
-                        location=city,
+                        trim=_extract_trim(card_title, year, make, model),
+                        location=location,
                         is_dealer=False,
                         url=link,
                     ))
@@ -183,7 +202,7 @@ def scrape_craigslist(year: int, make: str, model: str, trim: str, mileage: int,
                     continue
 
         except Exception as e:
-            logger.warning(f"CL RSS {city} failed: {e}")
+            logger.warning(f"CL {city} failed: {e}")
             continue
 
     return listings
