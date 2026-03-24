@@ -13,6 +13,8 @@ from datetime import datetime
 from typing import Optional
 from urllib.parse import quote
 
+import xml.etree.ElementTree as ET
+
 import requests
 from bs4 import BeautifulSoup
 from http.server import BaseHTTPRequestHandler
@@ -115,10 +117,10 @@ def _extract_trim(title: str, year: int, make: str, model: str) -> Optional[str]
 
 def scrape_craigslist(year: int, make: str, model: str, trim: str, mileage: int,
                       zip_code: str, radius: int) -> list[Listing]:
-    """Scrape Craigslist — works with plain requests."""
+    """Scrape Craigslist via RSS feed (no JS needed)."""
     session = requests.Session()
     listings = []
-    cities = _get_cl_cities(zip_code, limit=3)
+    cities = _get_cl_cities(zip_code, limit=5)
 
     query = f"{make} {model}"
     if trim:
@@ -128,68 +130,60 @@ def scrape_craigslist(year: int, make: str, model: str, trim: str, mileage: int,
         try:
             url = (
                 f"https://{city}.craigslist.org/search/cta"
-                f"?query={query.replace(' ', '+')}"
+                f"?format=rss"
+                f"&query={query.replace(' ', '+')}"
                 f"&min_auto_year={year}&max_auto_year={year}"
-                f"&sort=date&postal={zip_code}"
-                f"&search_distance={radius}"
+                f"&postal={zip_code}&search_distance={radius}"
             )
-            resp = _get(url, session)
-            soup = BeautifulSoup(resp.text, "lxml")
+            session.headers.update({
+                "User-Agent": random.choice(USER_AGENTS),
+                "Accept": "application/rss+xml, application/xml, text/xml, */*",
+            })
+            resp = session.get(url, timeout=15, allow_redirects=True)
+            if resp.status_code != 200:
+                continue
 
-            results = (
-                soup.select("div.cl-search-result")
-                or soup.select("li.cl-static-search-result")
-                or soup.select(".result-row")
-            )
+            root = ET.fromstring(resp.content)
+            ns = {"cl": "http://www.craigslist.org/about/cl-rss-3.0"}
 
-            for result in results:
+            for item in root.findall(".//item"):
                 try:
-                    card_title = result.get("title", "")
-                    title_el = result.select_one("a.titlestring") or result.select_one(".gallery-card a.main")
-                    if title_el:
-                        if not card_title:
-                            card_title = title_el.get_text(strip=True)
-                        href = title_el.get("href", "")
-                    else:
-                        any_a = result.select_one("a[href*='craigslist']")
-                        href = any_a.get("href", "") if any_a else ""
+                    title = item.findtext("title", "").strip()
+                    link = item.findtext("link", "").strip()
 
-                    link = href if href.startswith("http") else f"https://{city}.craigslist.org{href}"
-
-                    price_el = result.select_one(".priceinfo") or result.select_one(".result-price")
-                    if not price_el:
-                        continue
-                    price_match = re.search(r'\$([\d,]+)', price_el.get_text(strip=True))
+                    # Price from title or description
+                    desc = item.findtext("description", "") or ""
+                    price_text = title + " " + desc
+                    price_match = re.search(r'\$([\d,]+)', price_text)
                     if not price_match:
                         continue
                     price = int(price_match.group(1).replace(",", ""))
                     if price < 500:
                         continue
 
-                    meta_el = result.select_one(".meta")
-                    meta_text = meta_el.get_text(strip=True) if meta_el else ""
-                    mi_match = re.search(r'([\d,]+)\s*(?:mi|k\s*mi)', meta_text.lower() + " " + card_title.lower())
+                    # Mileage from description or title
+                    mi_match = re.search(r'([\d,]+)\s*(?:miles?|mi\b)', desc.lower() + " " + title.lower())
                     mi = int(mi_match.group(1).replace(",", "")) if mi_match else None
 
-                    loc_el = result.select_one(".result-location")
-                    location = loc_el.get_text(strip=True).strip("+ ") if loc_el else city
+                    # Location
+                    enc = item.find("enclosure")
+                    location = item.findtext("{http://www.georss.org/georss}point", city)
 
                     listings.append(Listing(
                         source="craigslist",
-                        title=card_title,
+                        title=title,
                         price=price,
                         mileage=mi,
-                        trim=_extract_trim(card_title, year, make, model),
-                        location=location,
+                        trim=_extract_trim(title, year, make, model),
+                        location=city,
                         is_dealer=False,
                         url=link,
                     ))
                 except Exception:
                     continue
 
-            time.sleep(random.uniform(1, 2))
         except Exception as e:
-            logger.warning(f"CL {city} failed: {e}")
+            logger.warning(f"CL RSS {city} failed: {e}")
             continue
 
     return listings

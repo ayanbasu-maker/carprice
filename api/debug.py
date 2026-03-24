@@ -18,7 +18,7 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
-        target = qs.get("url", ["https://austin.craigslist.org/search/cta?query=Porsche+911&min_auto_year=2011&max_auto_year=2011&sort=date&postal=78750&search_distance=100"])[0]
+        target = qs.get("url", ["https://austin.craigslist.org/search/cta?format=rss&query=Porsche+911&min_auto_year=2011&max_auto_year=2011&postal=78750&search_distance=100"])[0]
 
         session = requests.Session()
         session.headers.update({
