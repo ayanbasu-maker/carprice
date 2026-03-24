@@ -1,10 +1,9 @@
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/search" },
-    { "source": "/(.*)", "destination": "/public/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/public/index.html" }
   ],
   "functions": {
-    "api/search.py": {
+    "api/**/*.py": {
       "maxDuration": 30
     }
   }
