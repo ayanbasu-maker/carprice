@@ -1,0 +1,11 @@
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/search" },
+    { "source": "/(.*)", "destination": "/public/index.html" }
+  ],
+  "functions": {
+    "api/search.py": {
+      "maxDuration": 30
+    }
+  }
+}

@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CarPrice — What Should You Pay?</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #e5e5e5;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    header h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+
+    header h1 span { color: #22c55e; }
+
+    header p {
+      color: #888;
+      font-size: 1rem;
+    }
+
+    .search-form {
+      background: #141414;
+      border: 1px solid #262626;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .field label {
+      display: block;
+      font-size: 0.8rem;
+      color: #888;
+      margin-bottom: 0.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .field input, .field select {
+      width: 100%;
+      padding: 0.6rem 0.75rem;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .field input:focus, .field select:focus {
+      border-color: #22c55e;
+    }
+
+    .field input::placeholder { color: #555; }
+
+    .btn-search {
+      width: 100%;
+      padding: 0.75rem;
+      background: #22c55e;
+      color: #000;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn-search:hover { background: #16a34a; }
+    .btn-search:disabled {
+      background: #333;
+      color: #666;
+      cursor: not-allowed;
+    }
+
+    .status {
+      text-align: center;
+      padding: 2rem;
+      color: #888;
+      display: none;
+    }
+
+    .status.active { display: block; }
+
+    .spinner {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border: 3px solid #333;
+      border-top-color: #22c55e;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 0.75rem;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Results */
+    .results { display: none; }
+    .results.active { display: block; }
+
+    .summary-card {
+      background: linear-gradient(135deg, #052e16, #14532d);
+      border: 1px solid #166534;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+
+    .recommended-price {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: #22c55e;
+      margin: 0.5rem 0;
+    }
+
+    .summary-label {
+      font-size: 0.85rem;
+      color: #86efac;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .stats-row {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: #86efac;
+    }
+
+    .listings-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .listings-header h2 {
+      font-size: 1.1rem;
+      color: #fff;
+    }
+
+    .source-tags {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .source-tag {
+      font-size: 0.7rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      color: #888;
+    }
+
+    .source-tag.ok { border-color: #166534; color: #22c55e; }
+    .source-tag.fail { border-color: #7f1d1d; color: #ef4444; }
+
+    .listing-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    .listing-table th {
+      text-align: left;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid #333;
+      color: #888;
+      font-weight: 500;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .listing-table th.right { text-align: right; }
+
+    .listing-table td {
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid #1a1a1a;
+      color: #ccc;
+    }
+
+    .listing-table td.price {
+      color: #22c55e;
+      font-weight: 600;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .listing-table td.mileage {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .listing-table td a {
+      color: #60a5fa;
+      text-decoration: none;
+    }
+
+    .listing-table td a:hover { text-decoration: underline; }
+
+    .listing-table tr:hover { background: #141414; }
+
+    .error-msg {
+      text-align: center;
+      padding: 2rem;
+      color: #ef4444;
+      display: none;
+    }
+
+    .error-msg.active { display: block; }
+
+    @media (max-width: 600px) {
+      header h1 { font-size: 1.6rem; }
+      .form-grid { grid-template-columns: 1fr 1fr; }
+      .recommended-price { font-size: 2rem; }
+      .listing-table { font-size: 0.78rem; }
+      .listing-table th, .listing-table td { padding: 0.4rem 0.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Car<span>Price</span></h1>
+      <p>Find what you should actually pay — powered by real listings</p>
+    </header>
+
+    <div class="search-form">
+      <form id="searchForm">
+        <div class="form-grid">
+          <div class="field">
+            <label for="year">Year</label>
+            <input type="number" id="year" placeholder="2020" min="1990" max="2026" required>
+          </div>
+          <div class="field">
+            <label for="make">Make</label>
+            <input type="text" id="make" placeholder="Toyota" required>
+          </div>
+          <div class="field">
+            <label for="model">Model</label>
+            <input type="text" id="model" placeholder="Camry" required>
+          </div>
+          <div class="field">
+            <label for="trim">Trim</label>
+            <input type="text" id="trim" placeholder="SE (optional)">
+          </div>
+          <div class="field">
+            <label for="mileage">Mileage</label>
+            <input type="number" id="mileage" placeholder="45000" min="0" required>
+          </div>
+          <div class="field">
+            <label for="zip">Zip Code</label>
+            <input type="text" id="zip" placeholder="90210" pattern="[0-9]{5}" required>
+          </div>
+        </div>
+        <button type="submit" class="btn-search" id="btnSearch">Search Prices</button>
+      </form>
+    </div>
+
+    <div class="status" id="status">
+      <div class="spinner"></div>
+      <p id="statusText">Searching listings across multiple sources...</p>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+
+    <div class="results" id="results">
+      <div class="summary-card">
+        <div class="summary-label">Recommended Price</div>
+        <div class="recommended-price" id="recPrice">—</div>
+        <div class="stats-row">
+          <div class="stat">
+            <div class="stat-value" id="avgPrice">—</div>
+            <div class="stat-label">Average</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="medPrice">—</div>
+            <div class="stat-label">Median</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="lowPrice">—</div>
+            <div class="stat-label">Low (10th %)</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="highPrice">—</div>
+            <div class="stat-label">High (90th %)</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="totalCount">—</div>
+            <div class="stat-label">Listings</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="listings-header">
+        <h2>All Listings</h2>
+        <div class="source-tags" id="sourceTags"></div>
+      </div>
+
+      <table class="listing-table">
+        <thead>
+          <tr>
+            <th>Source</th>
+            <th class="right">Price</th>
+            <th>Trim</th>
+            <th class="right">Mileage</th>
+            <th>Type</th>
+            <th>Link</th>
+          </tr>
+        </thead>
+        <tbody id="listingsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const fmt = n => '$' + Number(n).toLocaleString('en-US', {maximumFractionDigits: 0});
+    const fmtMi = n => n ? Number(n).toLocaleString('en-US') + ' mi' : 'N/A';
+
+    $('searchForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const params = {
+        year: $('year').value,
+        make: $('make').value,
+        model: $('model').value,
+        trim: $('trim').value || '',
+        mileage: $('mileage').value,
+        zip_code: $('zip').value,
+      };
+
+      // UI state
+      $('results').classList.remove('active');
+      $('errorMsg').classList.remove('active');
+      $('status').classList.add('active');
+      $('btnSearch').disabled = true;
+      $('btnSearch').textContent = 'Searching...';
+
+      try {
+        const qs = new URLSearchParams(params).toString();
+        const resp = await fetch('/api/search?' + qs);
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+          throw new Error(data.error || 'Search failed');
+        }
+
+        if (data.total_listings === 0) {
+          throw new Error('No listings found. Try widening your search (remove trim, increase radius).');
+        }
+
+        // Populate summary
+        $('recPrice').textContent = fmt(data.recommended_price);
+        $('avgPrice').textContent = fmt(data.average_price);
+        $('medPrice').textContent = fmt(data.median_price);
+        $('lowPrice').textContent = fmt(data.price_low);
+        $('highPrice').textContent = fmt(data.price_high);
+        $('totalCount').textContent = data.total_listings;
+
+        // Source tags
+        $('sourceTags').innerHTML = '';
+        (data.sources_searched || []).forEach(s => {
+          const tag = document.createElement('span');
+          tag.className = 'source-tag ok';
+          tag.textContent = s;
+          $('sourceTags').appendChild(tag);
+        });
+        (data.sources_failed || []).forEach(s => {
+          const tag = document.createElement('span');
+          tag.className = 'source-tag fail';
+          tag.textContent = s + ' (failed)';
+          $('sourceTags').appendChild(tag);
+        });
+
+        // Listings table
+        $('listingsBody').innerHTML = '';
+        const listings = (data.listings || []).sort((a, b) => a.price - b.price);
+        listings.forEach(l => {
+          const tr = document.createElement('tr');
+          const domain = l.url ? new URL(l.url).hostname.replace('www.', '') : '';
+          tr.innerHTML = `
+            <td>${l.source}</td>
+            <td class="price">${fmt(l.price)}</td>
+            <td>${l.trim || '—'}</td>
+            <td class="mileage">${fmtMi(l.mileage)}</td>
+            <td>${l.is_dealer ? 'Dealer' : 'Private'}</td>
+            <td>${l.url ? '<a href="' + l.url + '" target="_blank" rel="noopener">' + domain + '</a>' : '—'}</td>
+          `;
+          $('listingsBody').appendChild(tr);
+        });
+
+        $('results').classList.add('active');
+
+      } catch (err) {
+        $('errorMsg').textContent = err.message;
+        $('errorMsg').classList.add('active');
+      } finally {
+        $('status').classList.remove('active');
+        $('btnSearch').disabled = false;
+        $('btnSearch').textContent = 'Search Prices';
+      }
+    });
+  </script>
+</body>
+</html>
