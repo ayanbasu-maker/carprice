@@ -3,7 +3,7 @@
     { "source": "/((?!api/).*)", "destination": "/public/index.html" }
   ],
   "functions": {
-    "api/**/*.py": {
+    "api/*.py": {
       "maxDuration": 30
     }
   }
